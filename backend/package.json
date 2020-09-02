@@ -1,0 +1,11 @@
+{
+  "name": "sls-cognito-backend",
+  "description": "",
+  "version": "0.1.0",
+  "dependencies": {
+    "aws-sdk": "^2.745.0"
+  },
+  "devDependencies": {
+    "serverless-plugin-common-excludes": "^3.0.0"
+  }
+}

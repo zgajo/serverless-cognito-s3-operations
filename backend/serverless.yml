@@ -1,0 +1,197 @@
+service: sls-cognito-backend
+
+custom:
+  UPLOADED_S3_BUCKET_NAME: sls-cognito-backend-uploadedswaggers3bucket
+
+plugins:
+  - serverless-plugin-common-excludes
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+  iamRoleStatements:
+    # - Effect: "Allow"
+    #   Action:
+    #     - "s3:ListBucket"
+    #     - "s3:PutObject"
+    #     - "s3:GetObject"
+    #     - "s3:*"
+    #   Resource: "arn:aws:s3:::${self:custom.UPLOADED_S3_BUCKET_NAME}/*"
+    # - Effect: "Allow"
+    #   Action:
+    #     - "s3:*"
+    #   Resource:
+    #     Fn::Join: ["", [Fn::GetAtt: [UploadedS3Bucket, Arn], "/*"]]
+    # - Effect: "Allow"
+    #   Action:
+    #     - "s3:PutObject"
+    #   Resource:
+    #     Fn::Join: ["", [Fn::GetAtt: [UploadedS3Bucket, Arn], "/*"]]
+
+    - Effect: Allow
+      Action:
+        - "s3:*"
+      Resource:
+        Fn::Join:
+          - ""
+          - - "arn:aws:s3:::"
+            - Ref: UploadedS3Bucket
+    - Effect: Allow
+      Action:
+        - "s3:*"
+      Resource:
+        Fn::Join:
+          - ""
+          - - "arn:aws:s3:::"
+            - Ref: UploadedS3Bucket
+            - "/*"
+
+functions:
+  hello:
+    handler: handler.hello
+    events:
+      - http:
+          path: hello
+          method: get
+          cors: true
+          authorizer: aws_iam
+  getFiles:
+    handler: handler.getFiles
+    events:
+      - http:
+          path: files
+          cors: true
+          method: get
+
+resources:
+  Resources:
+    # Cognito -User pool
+    CognitoUserPool:
+      Type: AWS::Cognito::UserPool
+      Properties:
+        UserPoolName: cognito_sls_backend_user_pool
+    # Cognito - client
+    CognitoUserPoolClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        ClientName: cognito_sls_backend_client
+        UserPoolId:
+          Ref: CognitoUserPool
+    # Cognito - Identity
+    CognitoIdentityPool:
+      Type: AWS::Cognito::IdentityPool
+      Properties:
+        IdentityPoolName: cognito_sls_backend_identity_pool
+        AllowUnauthenticatedIdentities: false
+        CognitoIdentityProviders:
+          - ClientId:
+              Ref: CognitoUserPoolClient
+            ProviderName:
+              Fn::GetAtt: [CognitoUserPool, ProviderName]
+    # Cognito roles
+    CognitoIdentityPoolRoles:
+      Type: AWS::Cognito::IdentityPoolRoleAttachment
+      Properties:
+        IdentityPoolId:
+          Ref: CognitoIdentityPool
+        Roles:
+          authenticated:
+            Fn::GetAtt: [CognitoAuthRole, Arn]
+          unauthenticated:
+            Fn::GetAtt: [CognitoUnauthRole, Arn]
+
+    CognitoAuthRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: appAuthRole
+        Path: /
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: "Allow"
+              Principal:
+                Federated: "cognito-identity.amazonaws.com"
+              Action:
+                - "sts:AssumeRoleWithWebIdentity"
+              Condition:
+                StringEquals:
+                  "cognito-identity.amazonaws.com:aud":
+                    Ref: CognitoIdentityPool
+                "ForAnyValue:StringLike":
+                  "cognito-identity.amazonaws.com:amr": authenticated
+        Policies:
+          - PolicyName: "CognitoAuthorizedPolicy"
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: "Allow"
+                  Action:
+                    - "mobileanalytics:PutEvents"
+                    - "cognito-sync:*"
+                    - "cognito-identity:*"
+                    - "s3:GetObject"
+                    - "s3:PutObject"
+                  Resource: "*"
+                  # Policy to allow Api gateway calls for auth users
+                - Effect: "Allow"
+                  Action:
+                    - "execute-api:Invoke"
+                  Resource: "*"
+                  # Policy to allow S3 bucket management for auth users
+                - Effect: "Allow"
+                  Action:
+                    - "s3:*"
+                  Resource: "arn:aws:s3:::${self:custom.UPLOADED_S3_BUCKET_NAME}/*"
+
+    CognitoUnauthRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: appUnauthRole
+        Path: /
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: "Allow"
+              Principal:
+                Federated: "cognito-identity.amazonaws.com"
+              Action:
+                - "sts:AssumeRoleWithWebIdentity"
+              Condition:
+                StringEquals:
+                  "cognito-identity.amazonaws.com:aud":
+                    Ref: CognitoIdentityPool
+                "ForAnyValue:StringLike":
+                  "cognito-identity.amazonaws.com:amr": unauthenticated
+        Policies:
+          - PolicyName: "CognitoUnauthorizedPolicy"
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: "Allow"
+                  Action:
+                    - "mobileanalytics:PutEvents"
+                    - "cognito-sync:*"
+                    - "cognito-identity:*"
+                  Resource: "*"
+
+    UploadedS3Bucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.UPLOADED_S3_BUCKET_NAME}
+        CorsConfiguration:
+          CorsRules:
+            - AllowedHeaders:
+                - "*"
+              AllowedMethods:
+                - HEAD
+                - GET
+                - PUT
+                - POST
+                - DELETE
+              AllowedOrigins:
+                - "*"
+              ExposedHeaders:
+                - x-amz-server-side-encryption
+                - x-amz-request-id
+                - x-amz-id-2
+              MaxAge: 3000
