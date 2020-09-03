@@ -8,7 +8,6 @@ import Routes from "./Routes";
 
 class App extends Component {
   render() {
-    console.log("this.prope", this.props);
     return (
       <div className="App container">
         <Navbar fluid collapseOnSelect>
