@@ -68,6 +68,9 @@ resources:
     # Cognito -User pool
     CognitoUserPool:
       Type: AWS::Cognito::UserPool
+      # Set the DeletionPolicy to Retain on the resources that you want to make sure are not removed through CloudFormation.
+      # This is especially useful for the resources that contains data.
+      DeletionPolicy: Retain
       Properties:
         UserPoolName: cognito_sls_backend_user_pool
     # Cognito - client
